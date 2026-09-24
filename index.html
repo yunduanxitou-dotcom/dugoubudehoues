@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>大起大落 · 风浪币对赌</title>
+<!--
+  ============================================================
+  《大起大落》抛硬币游戏  —— 单文件版（HTML + CSS + JS 全在一个文件里）
+  规则来源：与用户的 7 条设计决策
+    1. 赚快钱的投机体验（PvE 对赌为主）
+    2. 筹码 = 游戏内「风浪币」，与真实金钱无关
+    3. 纯真随机 50/50，无任何权重修正
+    4. 反面 → 本手筹码被浪卷走，换下一位玩家
+       正面 → 玩家自选【见好就收】或【继续浪】
+    5. 清零后可抵押荒诞物品借钱续命（轻/中/加 三档杠杆）
+    6. 小场 2~6 人
+    7. 不设胜负：玩到散场为止，不排名不清算
+  ============================================================
+-->
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="flash"></div>
+
+<!-- ============================================================
+     页面一：设置页
+     ============================================================ -->
+<section id="setup" class="screen active">
+  <div class="logo">
+    <h1>大起大落</h1>
+  </div>
+
+  <div class="card">
+    <h2>① 几个人上桌？（2 ~ 6 人）</h2>
+    <div class="chips" id="countChips"></div>
+    <div class="name-grid" id="nameGrid" style="margin-top:14px;"></div>
+  </div>
+
+  <div class="card">
+    <h2>② 规则参数</h2>
+    <div class="name-grid params">
+      <div>
+        <label>每人初始风浪币</label>
+        <input type="number" id="startCoins" value="100" min="10" step="10">
+      </div>
+      <div>
+        <label>每人抵押物数量（续命次数）</label>
+        <input type="number" id="collateralNum" value="3" min="0" max="10">
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>③ 规则速览</h2>
+    <div class="rules">
+      · 轮到你时，用滑杆 <b>自己决定押多少筹码</b>（10% / 25% / 50% / 全押 一键切换）。<br>
+      · <span class="g">正面</span>：桌上筹码 <b>翻倍</b>。然后你自选 —— <span class="g">见好就收</span>（落袋、换人）或 <span class="r">继续浪</span>（整堆再押一次，越滚越大）。<br>
+      · <span class="r">反面</span>：押上桌的筹码被浪全卷走，<b>没押的部分还留在手上</b>，换下一位玩家。全押失手就是清零。<br>
+      · 清零后可以抵押一件 <b>荒诞物品</b> 借钱续命，三档杠杆：借得越多，借到手的概率越低。<br>
+      · 硬币是 <b>纯真随机 50/50</b>，没有任何暗改。<br>
+      · <b>场上只剩一位玩家时本场自动结束</b> —— 一个人对着硬币抛没意思。<br>
+      · <b>任何人数、任何时候</b>都能中途 <b>撤离</b>（点自己卡片上的「撤离」，要点两下确认）；撤离后直接下桌，只剩一人时整局结束。<br>
+      · <b>不设胜负</b>：玩到大家想散场，点右上角「散场」即可，不排名不清算。
+    </div>
+  </div>
+
+  <button class="btn-main" id="startBtn">开 局</button>
+</section>
+
+<!-- ============================================================
+     页面二：对局页
+     ============================================================ -->
+<section id="game" class="screen">
+  <div class="topbar">
+    <div>
+      <div class="title">大 起 大 落</div>
+      <div class="meta" id="roundMeta">第 1 手</div>
+    </div>
+    <button class="btn-ghost" id="endBtn">散场（不排名不清算）</button>
+  </div>
+
+  <div class="layout">
+    <!-- 左：玩家席 -->
+    <div class="panel players-panel">
+      <h3>玩 家 席</h3>
+      <div id="players"></div>
+    </div>
+
+    <!-- 中：风浪日志（醒目，居中） -->
+    <div class="panel log-panel">
+      <h3>风 浪 日 志 <span class="log-count" id="logCount"></span></h3>
+      <div id="log"></div>
+    </div>
+
+    <!-- 右：赌桌 -->
+    <div class="panel stage">
+      <div class="turn-name" id="turnName">—</div>
+      <div class="turn-sub" id="turnSub">—</div>
+
+      <div class="coin-wrap">
+        <div class="coin" id="coin">
+          <div class="face front">正</div>
+          <div class="face back">反</div>
+        </div>
+      </div>
+
+      <div class="pot-box">
+        <div class="pot-label">桌 上 筹 码</div>
+        <div class="pot-val dim" id="potVal">0</div>
+      </div>
+
+      <div class="streak" id="streak"></div>
+
+      <!-- 押注调节器：只在「还没押注」的时候出现 -->
+      <div class="stake-box" id="stakeBox">
+        <div class="stake-top">
+          <span class="lab">本 手 押 注</span>
+          <span class="num" id="stakeNum">0</span>
+          <span class="pct" id="stakePct">全押 100%</span>
+        </div>
+        <input type="range" id="stakeRange" min="1" max="100" step="1" value="100" aria-label="押注比例">
+        <div class="stake-quick" id="stakeQuick"></div>
+        <div class="stake-note" id="stakeNote"></div>
+      </div>
+
+      <div class="actions" id="actions"></div>
+      <!-- 借钱面板就长在这里（赌桌正下方），不用滚屏也不会点错按钮 -->
+      <div id="borrowSlot"></div>
+      <div class="hint">快捷键：← → 调押注 · 空格 = 抛币 / 继续浪 · 回车 = 见好就收</div>
+    </div>
+  </div>
+</section>
+
+<!-- 借钱面板（清零时插入到赌桌下方） -->
+<template id="borrowTpl">
+  <div class="panel borrow" id="borrowPanel" style="margin-top:14px;">
+    <h3>抵 押 借 钱（用你的荒诞物品换筹码）</h3>
+    <div class="borrow-items" id="borrowItems"></div>
+    <div class="lev-row" id="levRow"></div>
+  </div>
+</template>
+
+<!-- ============================================================
+     页面三：散场总结
+     ============================================================ -->
+<div id="over">
+  <div class="over-box">
+    <h2>散 场</h2>
+    <div class="sub" id="overSub">一场狂欢到此为止 · 不排名 · 不清算</div>
+    <div id="recapList"></div>
+    <button class="btn-main" id="againBtn">再 来 一 局</button>
+  </div>
+</div>
+
+<!-- ============================================================
+     抵押物查询弹窗：点玩家卡上的「抵押物 N」打开
+     ============================================================ -->
+<div id="collModal">
+  <div class="coll-box">
+    <div class="coll-head">
+      <span class="avatar" id="collAvatar">?</span>
+      <div class="coll-titlebox">
+        <div class="coll-title" id="collTitle">的抵押物</div>
+        <div class="coll-sub" id="collSub"></div>
+      </div>
+      <button class="coll-close" id="collClose">✕</button>
+    </div>
+    <div class="coll-list" id="collList"></div>
+    <button class="btn-ghost coll-done" id="collDone">知 道 了</button>
+  </div>
+</div>
+
+<script src="game.js" defer></script>
+</body>
+</html>

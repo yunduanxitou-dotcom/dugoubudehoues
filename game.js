@@ -224,8 +224,7 @@ function nextTurn() {
 
   state.pot = 0;
 
-  // 关键规则：场上只剩一位玩家，本场直接结束。
-  // 一个人对着硬币抛没意思 —— 抛硬币对赌至少得有两个人才成立。
+  // 只有「全部下桌」才收场；剩最后一人也能继续一个人抛硬币对赌
   if (endGameIfTooFew()) return;
 
   const total = state.players.length;
@@ -243,16 +242,13 @@ function nextTurn() {
 /** 场上还有几个活人 */
 function aliveCount() { return state.players.filter((p) => p.alive).length; }
 
-/** 该收场了吗：活人不足两位（0 个或 1 个） */
-function shouldEndGame() { return aliveCount() <= 1; }
+/** 该收场了吗：一个活人都没有 */
+function shouldEndGame() { return aliveCount() === 0; }
 
-/** 人不够了就收场。返回 true 表示本局已经结束。 */
+/** 人全下桌了就收场。返回 true 表示本局已经结束。 */
 function endGameIfTooFew() {
   if (!shouldEndGame()) return false;
-  const left = state.players.filter((p) => p.alive);
-  endGame(left.length === 1
-    ? "场上只剩 " + left[0].name + " 一个人，抛硬币没对手了"
-    : "所有人都下桌了");
+  endGame("所有人都下桌了");
   return true;
 }
 

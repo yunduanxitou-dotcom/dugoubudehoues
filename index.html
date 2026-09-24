@@ -131,19 +131,22 @@
 <!-- 借钱面板（清零时插入到赌桌下方） -->
 <template id="borrowTpl">
   <div class="panel borrow" id="borrowPanel" style="margin-top:14px;">
-    <h3>抵 押 借 钱（用你的荒诞物品换筹码）</h3>
-    <div class="borrow-items" id="borrowItems"></div>
+    <h3>抵 押 借 钱（先选物品，再选杠杆）</h3>
+    <div class="borrow-items">
+      <div class="borrow-items-label">选一件要押的物品：</div>
+      <div class="borrow-tags" id="borrowTags"></div>
+    </div>
     <div class="lev-row" id="levRow"></div>
   </div>
 </template>
 
 <!-- ============================================================
-     页面三：散场总结
+     页面三：结算排行榜
      ============================================================ -->
 <div id="over">
   <div class="over-box">
-    <h2>散 场</h2>
-    <div class="sub" id="overSub">一场狂欢到此为止 · 不排名 · 不清算</div>
+    <h2>🏆 结 算 排 行 榜</h2>
+    <div class="sub" id="overSub">按总资产排名 · 负债已扣除</div>
     <div id="recapList"></div>
     <button class="btn-main" id="againBtn">再 来 一 局</button>
   </div>

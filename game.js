@@ -40,7 +40,8 @@ const state = {
   lastResult: null,   // 最近一次结果 'head' | 'tail'
   busy: false,        // 锁：硬币还在天上时，禁止再抛一次
   stakePct: 100,      // 本手押注占手上筹码的百分比（1~100，100 = 全押）
-  flipTimer: null     // 抛币动画的计时器；玩家中途撤离时要取消它，免得结算到别人头上
+  flipTimer: null,    // 抛币动画的计时器；玩家中途撤离时要取消它，免得结算到别人头上
+  pickIdx: 0          // 借钱时玩家选中要押的抵押物下标
 };
 
 // 押注快捷档：比例 + 显示名字
@@ -203,6 +204,7 @@ function beginTurn() {
   if (p.coins <= 0) {
     if (p.collateral.length > 0) {
       state.phase = "borrow";
+      state.pickIdx = 0;                 // 换人借钱时，选中项归零
       log(p.name + " 手上一个风浪币都没有了，得抵押点东西换钱……", "loan");
     } else {
       p.alive = false;
@@ -369,9 +371,11 @@ function pressOn() {
 /* ============================================================
    8. 抵押借钱
    ============================================================ */
-function doBorrow(level) {
+function doBorrow(itemIdx, level) {
   const p = current();
-  const item = p.collateral.shift();          // 抵押物先交出去（无论成败都要交）
+  // 拿走玩家亲手选中的那件抵押物（无论成败都要交出去）
+  const item = p.collateral.splice(itemIdx, 1)[0];
+  if (!item) { render(); return; }
   const amount = state.base * level.mult;
   const success = Math.random() < level.rate;
 
@@ -387,6 +391,7 @@ function doBorrow(level) {
     shake();
   }
 
+  state.pickIdx = 0;               // 选中项已押掉，重置到第一件
   state.pot = 0;
   render();
 
@@ -640,20 +645,26 @@ function renderStage() {
 
   } else if (state.phase === "borrow") {
     $("turnName").textContent = p.name + " 没钱了";
-    $("turnSub").textContent = "抵押一件荒诞物品，换筹码重新进场（还剩 " + p.collateral.length + " 件）";
+    $("turnSub").textContent = "先点选一件物品，再选杠杆借钱（还剩 " + p.collateral.length + " 件）";
 
     const tpl = $("borrowTpl").content.cloneNode(true);
     slot.appendChild(tpl);           // 长在赌桌正下方，不需要滚屏
 
-    // 列出你现在能押哪些东西 —— 每件一个醒目标签，先看清楚自己的家底
-    const itemsBox = $("borrowItems");
-    if (itemsBox) {
-      itemsBox.innerHTML = '<div class="borrow-items-label">你现在能押（会随机押出一件）：</div>'
-        + '<div class="borrow-tags">'
-        + (p.collateral.length
-            ? p.collateral.map((i) => '<span class="borrow-tag">🏷 ' + i + "</span>").join("")
-            : '<span class="borrow-tag" style="opacity:.55">一件都没有了</span>')
-        + "</div>";
+    // 选抵押物：每件一个可点选标签，点中的高亮
+    if (state.pickIdx >= p.collateral.length) state.pickIdx = 0;   // 防越界
+    const tags = $("borrowTags");
+    tags.innerHTML = "";
+    if (p.collateral.length) {
+      p.collateral.forEach((item, idx) => {
+        const tag = document.createElement("button");
+        tag.type = "button";
+        tag.className = "borrow-tag" + (idx === state.pickIdx ? " picked" : "");
+        tag.textContent = "🏷 " + item;
+        tag.onclick = () => { state.pickIdx = idx; render(); };
+        tags.appendChild(tag);
+      });
+    } else {
+      tags.innerHTML = '<span class="borrow-tag" style="opacity:.55">一件都没有了</span>';
     }
 
     const row = $("levRow");
@@ -664,7 +675,7 @@ function renderStage() {
                   + '<div class="a">' + (state.base * lv.mult).toLocaleString() + "</div>"
                   + '<div class="r">到手概率 ' + Math.round(lv.rate * 100) + "%</div>"
                   + '<div class="d">' + lv.desc + "</div>";
-      b.onclick = () => doBorrow(lv);
+      b.onclick = () => doBorrow(state.pickIdx, lv);
       row.appendChild(b);
     });
   }
@@ -722,16 +733,24 @@ function mkBtn(text, cls, fn, disabled) {
 }
 
 /* ============================================================
-   10. 散场总结 · 结算排行
-   净资产 = 最终风浪币 − 抵押借钱产生的负债，按净资产从高到低排
+   10. 结算排行榜
+   总资产 = 最终风浪币 − 抵押借钱产生的负债，按总资产从高到低排
    ============================================================ */
 function showOver(reason) {
-  $("overSub").textContent = reason ? reason + " · 结算完毕" : "一场狂欢到此为止";
+  $("overSub").textContent = reason ? reason + " · 按总资产排名" : "按总资产排名 · 负债已扣除";
 
   const list = $("recapList");
   list.innerHTML = "";
 
-  // 排行：按净资产（风浪币 - 负债）从高到低
+  // 表头
+  const head = document.createElement("div");
+  head.className = "recap board-head";
+  head.innerHTML = '<span class="rank-no">名次</span>'
+    + '<span class="board-main"><span class="nm">玩家</span></span>'
+    + '<span class="fin">总资产</span>';
+  list.appendChild(head);
+
+  // 排行：按总资产（风浪币 - 负债）从高到低
   const ranked = state.players
     .map((p) => Object.assign({}, p, { net: p.coins - p.debt }))
     .sort((a, b) => b.net - a.net);
@@ -742,19 +761,21 @@ function showOver(reason) {
     d.className = "recap rank rank-" + (i + 1) + (p.alive ? "" : " out-rec");
     const medal = MEDALS[i] || (i + 1);
     const netCls = p.net < 0 ? " neg" : "";
+    const title = i === 0 ? ' <span class="champ">冠军</span>' : "";
+
+    const detail = ["风浪币 " + p.coins.toLocaleString()];
+    if (p.debt > 0) detail.push("负债 " + p.debt.toLocaleString());
+    detail.push("最高 " + p.peak.toLocaleString());
+    detail.push("连中 " + p.bestStreak + " 次");
 
     d.innerHTML =
-      '<div class="rank-no">' + medal + "</div>"
-      + '<div class="rank-body">'
-      +   '<div class="r1"><span class="nm" style="color:' + p.color + '">' + p.name
-      +   (p.alive ? "" : ' <span class="out-tag">已下桌</span>') + "</span>"
-      +   '<span class="fin' + netCls + '">' + p.net.toLocaleString() + "</span></div>"
-      +   '<div class="r2">风浪币 ' + p.coins.toLocaleString()
-      +   (p.debt > 0 ? " · 负债 " + p.debt.toLocaleString() : "")
-      +   " · 最高 " + p.peak.toLocaleString()
-      +   " · 连中 " + p.bestStreak + " 次"
-      +   " · 借 " + p.borrows + " 次</div>"
-      + "</div>";
+      '<span class="rank-no">' + medal + "</span>"
+      + '<span class="board-main">'
+      +   '<span class="nm" style="color:' + p.color + '">' + p.name + title + "</span>"
+      +   (p.alive ? "" : ' <span class="out-tag">已下桌</span>')
+      +   '<span class="bd-detail">' + detail.join(" · ") + "</span>"
+      + "</span>"
+      + '<span class="fin' + netCls + '">' + p.net.toLocaleString() + "</span>";
     list.appendChild(d);
   });
   $("over").classList.add("show");

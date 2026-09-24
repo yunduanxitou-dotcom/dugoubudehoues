@@ -167,7 +167,8 @@ function startGame() {
     bestStreak: 0,    // 本场最长连击
     peak: startCoins, // 本场最高资产（高光时刻）
     wipeouts: 0,      // 被清零次数
-    borrows: 0        // 成功借钱次数
+    borrows: 0,       // 成功借钱次数
+    debt: 0           // 抵押借钱产生的负债（结算时从资产里扣）
   }));
   state.turn = 0;
   state.pot = 0;
@@ -377,8 +378,9 @@ function doBorrow(level) {
   if (success) {
     p.coins += amount;
     p.borrows++;
+    p.debt += amount;              // 借到手的钱记成负债，结算时要还
     if (p.coins > p.peak) p.peak = p.coins;
-    log("✅ " + p.name + " 抵押「" + item + "」换来 " + amount + " 风浪币，重新进场。", "loan");
+    log("✅ " + p.name + " 抵押「" + item + "」换来 " + amount + " 风浪币（负债 +" + amount + "），重新进场。", "loan");
     flash("gold");
   } else {
     log("❌ " + p.name + " 抵押「" + item + "」想借 " + amount + " 风浪币 —— 人家没批，东西也没了。", "loan");
@@ -472,7 +474,15 @@ function renderPlayers() {
         + (p.streak >= 2 ? '<span class="streak-badge">🔥' + p.streak + "连中</span>" : "");
     it.title = "点开查看 " + p.name + " 的抵押物";
     it.onclick = () => openCollateral(p.id);
-    info.appendChild(nm); info.appendChild(co); info.appendChild(it);
+    info.appendChild(nm); info.appendChild(co);
+    // 有负债就实时标出来（红字），结算时要从资产里扣
+    if (p.debt > 0) {
+      const db = document.createElement("div");
+      db.className = "debt";
+      db.textContent = "负债 " + p.debt.toLocaleString();
+      info.appendChild(db);
+    }
+    info.appendChild(it);
 
     d.appendChild(av); d.appendChild(info);
     if (!p.alive) {
@@ -712,28 +722,39 @@ function mkBtn(text, cls, fn, disabled) {
 }
 
 /* ============================================================
-   10. 散场总结
+   10. 散场总结 · 结算排行
+   净资产 = 最终风浪币 − 抵押借钱产生的负债，按净资产从高到低排
    ============================================================ */
 function showOver(reason) {
-  // 顶部说明这次是「为什么」收场的：只剩一人 / 全员下桌 / 手动散场
-  $("overSub").textContent = reason
-    ? reason + " · 不排名 · 不清算"
-    : "一场狂欢到此为止 · 不排名 · 不清算";
+  $("overSub").textContent = reason ? reason + " · 结算完毕" : "一场狂欢到此为止";
 
   const list = $("recapList");
   list.innerHTML = "";
-  state.players.forEach((p) => {
+
+  // 排行：按净资产（风浪币 - 负债）从高到低
+  const ranked = state.players
+    .map((p) => Object.assign({}, p, { net: p.coins - p.debt }))
+    .sort((a, b) => b.net - a.net);
+
+  const MEDALS = ["🥇", "🥈", "🥉"];
+  ranked.forEach((p, i) => {
     const d = document.createElement("div");
-    d.className = "recap" + (p.alive ? "" : " out-rec");
+    d.className = "recap rank rank-" + (i + 1) + (p.alive ? "" : " out-rec");
+    const medal = MEDALS[i] || (i + 1);
+    const netCls = p.net < 0 ? " neg" : "";
+
     d.innerHTML =
-      '<div class="r1"><span class="nm" style="color:' + p.color + '">' + p.name
-      + (p.alive ? "" : ' <span class="out-tag">已下桌</span>') + "</span>"
-      + '<span class="fin">' + p.coins.toLocaleString() + "</span></div>"
-      + '<div class="r2">本场最高资产 ' + p.peak.toLocaleString()
-      + " · 最长连中 " + p.bestStreak + " 次"
-      + " · 被清零 " + p.wipeouts + " 次"
-      + " · 成功借钱 " + p.borrows + " 次"
-      + " · 剩余抵押物 " + p.collateral.length + " 件</div>";
+      '<div class="rank-no">' + medal + "</div>"
+      + '<div class="rank-body">'
+      +   '<div class="r1"><span class="nm" style="color:' + p.color + '">' + p.name
+      +   (p.alive ? "" : ' <span class="out-tag">已下桌</span>') + "</span>"
+      +   '<span class="fin' + netCls + '">' + p.net.toLocaleString() + "</span></div>"
+      +   '<div class="r2">风浪币 ' + p.coins.toLocaleString()
+      +   (p.debt > 0 ? " · 负债 " + p.debt.toLocaleString() : "")
+      +   " · 最高 " + p.peak.toLocaleString()
+      +   " · 连中 " + p.bestStreak + " 次"
+      +   " · 借 " + p.borrows + " 次</div>"
+      + "</div>";
     list.appendChild(d);
   });
   $("over").classList.add("show");
